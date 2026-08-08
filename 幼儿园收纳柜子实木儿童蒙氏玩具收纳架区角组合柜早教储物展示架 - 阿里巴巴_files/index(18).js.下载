@@ -1,0 +1,76 @@
+"use strict";
+
+!function () {
+  var o = "__share_id",
+      n = function (e) {
+    try {
+      null == e && window && window.navigator && window.navigator.userAgent && (e = window.navigator.userAgent);
+    } catch (e) {
+      return console.log("get ua error"), {};
+    }
+
+    e = /AliApp\(([^\/]+)\/([^\/]+)\)/.exec(e);
+    return e && e[1] ? {
+      appCode: e[1]
+    } : {};
+  },
+      a = function (e) {
+    if (!e) return "";
+
+    try {
+      var r = new RegExp("(\\?|&)" + o + "=([^&=]*)"),
+          t = e.match(r);
+      return t && t[2] ? t[2] : "";
+    } catch (e) {
+      return "";
+    }
+  },
+      i = function () {
+    return !!a(window.location.href);
+  },
+      c = function (e) {
+    var r = function (e, r) {
+      for (r = String(r).toLowerCase(); e && e.tagName.toLowerCase() !== r;) {
+        e = e.parentElement;
+      }
+
+      return e;
+    }(e.target, "a");
+
+    if (!r || !r.getAttribute("href")) return !1;
+    if (!i()) return !1;
+    var t = a(window.location.href),
+        e = a(r.href);
+    return t && !e && r.setAttribute("href", d(r.href, t)), !1;
+  },
+      d = function (r, e) {
+    try {
+      return e ? r += (/\?/.test(r) ? "&" : "?") + o + "=" + e : r;
+    } catch (e) {
+      return r;
+    }
+  },
+      u = {
+    getShareId: a,
+    detect: n,
+    addShareToUrl: d,
+    listenClick: c,
+    hasUrlShareId: i,
+    isShareProxy: !1,
+    open: function open() {
+      var e, r, t;
+      u.isShareProxy || document.body && a(window.location.href) && (e = "1688" === (t = n()).appCode, r = "microsupply" === t.appCode, t = "MRO" === t.appCode, e || r || t || (u.isShareProxy = !0, document.body.addEventListener("click", c, !1)));
+    },
+    close: function close() {
+      u.isShareProxy && (u.isShareProxy = !1, document.body.removeEventListener("click", c, !1));
+    }
+  };
+
+  setTimeout(function () {
+    try {
+      u.open(!0), window.__ShareProxy = u;
+    } catch (e) {
+      console.error("分享参数劫持失败, error:", e);
+    }
+  }, 100);
+}();

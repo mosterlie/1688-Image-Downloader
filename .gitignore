@@ -1,0 +1,24 @@
+# 压缩包和构建产物
+*.zip
+*.rar
+*.tar.gz
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE 和编辑器配置
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 日志
+*.log
+
+# 项目专属
+# 忽略临时测试下载的文件夹（通常带有 1.【商品标题】 类似特征，但一般不在项目目录下载）
