@@ -6,7 +6,7 @@ const srcDir = __dirname;
 const distDir = path.join(__dirname, 'dist');
 
 const filesToObfuscate = ['popup.js', 'background.js', 'content.js'];
-const filesToCopy = ['popup.html', 'popup.css', 'manifest.json', 'icon.png', 'README.md', 'VERSION.md'];
+const filesToCopy = ['popup.html', 'popup.css', 'manifest.json', 'README.md', 'VERSION.md'];
 
 async function build() {
   console.log('Cleaning dist directory...');
@@ -63,6 +63,13 @@ async function build() {
     if (await fs.pathExists(srcPath)) {
       await fs.copy(srcPath, destPath);
     }
+  }
+
+  // Copy icons folder if it exists
+  const iconsDirSrc = path.join(srcDir, 'icons');
+  if (await fs.pathExists(iconsDirSrc)) {
+    console.log('Copying icons directory...');
+    await fs.copy(iconsDirSrc, path.join(distDir, 'icons'));
   }
 
   // Copy images folder if it exists
