@@ -6,6 +6,38 @@
 
 'use strict';
 
+var SECRET_KEY = "1688_PIC_DOWNLOADER_SUPER_SECRET_2026_!@#"; 
+
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyLicenseBackground() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['machine_id', 'act_code'], async function(result) {
+      const mid = result.machine_id;
+      const actCodeBase64 = result.act_code;
+      if (!mid || !actCodeBase64) return resolve(false);
+      try {
+        const raw = atob(actCodeBase64);
+        const parts = raw.split('|');
+        if (parts.length !== 2) return resolve(false);
+        const expireTs = parseInt(parts[0], 10);
+        const signature = parts[1];
+        if (Date.now() > expireTs) return resolve(false);
+        const payload = mid + expireTs + SECRET_KEY;
+        const expectedSig = await sha256(payload);
+        resolve(expectedSig === signature);
+      } catch(e) {
+        resolve(false);
+      }
+    });
+  });
+}
+
 /**
  * When the extension icon is clicked, open a resizable popup window directly.
  * Passes the current tab ID so the popup knows which page to scan.
@@ -219,6 +251,12 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     var folder = message.folder;
 
     (async function () {
+      var isAuth = await verifyLicenseBackground();
+      if (!isAuth) {
+        sendResponse({ success: false, failed: 0, completed: 0, error: 'Auth failed' });
+        return;
+      }
+
       var completed = 0;
       var failed = 0;
 

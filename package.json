@@ -1,0 +1,25 @@
+{
+  "name": "picdownload",
+  "version": "1.0.0",
+  "description": "一款基于 **Chrome Manifest V3** 规范开发的网页数据与图片一键采集扩展，专门用于快速抓取阿里巴巴 1688 商品详情页的核心素材。",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mosterlie/1688-Image-Downloader.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/mosterlie/1688-Image-Downloader/issues"
+  },
+  "homepage": "https://github.com/mosterlie/1688-Image-Downloader#readme",
+  "devDependencies": {
+    "fs-extra": "^11.4.0",
+    "javascript-obfuscator": "^5.5.0"
+  }
+}

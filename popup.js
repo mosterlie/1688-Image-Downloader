@@ -7,6 +7,40 @@
 
 'use strict';
 
+// --- Authorization State ---
+var isAuthorizedSession = false;
+var SECRET_KEY = "1688_PIC_DOWNLOADER_SUPER_SECRET_2026_!@#"; 
+
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyLicense(machineId, actCodeBase64) {
+  try {
+    const raw = atob(actCodeBase64);
+    const parts = raw.split('|');
+    if (parts.length !== 2) return false;
+    const expireTs = parseInt(parts[0], 10);
+    const signature = parts[1];
+    if (Date.now() > expireTs) return false;
+    const payload = machineId + expireTs + SECRET_KEY;
+    const expectedSig = await sha256(payload);
+    if (expectedSig === signature) return { valid: true, expireTs: expireTs };
+    return false;
+  } catch(e) {
+    return false;
+  }
+}
+
+function formatDate(ts) {
+  if (ts > 2000000000000) return "永久授权";
+  const d = new Date(ts);
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,'0') + "-" + String(d.getDate()).padStart(2,'0');
+}
+
 // --- DOM Elements ---
 var btnScan = document.getElementById('btn-scan');
 var btnDownload = document.getElementById('btn-download');
@@ -662,6 +696,7 @@ async function findTargetTab() {
 
 // --- Core: SCAN function ---
 async function performScan() {
+  if (!isAuthorizedSession) return;
   setStatus('scanning', '\u6b63\u5728\u626b\u63cf\u9875\u9762...');
   btnScan.classList.add('btn-loading');
   btnScan.disabled = true;
@@ -744,9 +779,72 @@ async function performScan() {
   btnScan.disabled = false;
 }
 
-// --- Auto-scan when popup opens ---
+// --- Auto-scan when popup opens (Wrapped with Auth Check) ---
 document.addEventListener('DOMContentLoaded', function () {
-  performScan();
+  chrome.storage.local.get(['machine_id', 'act_code'], async function(result) {
+    let mid = result.machine_id;
+    if (!mid) {
+      mid = 'MID-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      chrome.storage.local.set({machine_id: mid});
+    }
+    
+    let isAuth = false;
+    if (result.act_code) {
+      const authRes = await verifyLicense(mid, result.act_code);
+      if (authRes && authRes.valid) {
+        isAuth = true;
+        document.getElementById('license-status').textContent = '已激活至: ' + formatDate(authRes.expireTs);
+      }
+    }
+    
+    const appEl = document.getElementById('app');
+    const authOverlay = document.getElementById('auth-overlay');
+    
+    if (isAuth) {
+      isAuthorizedSession = true;
+      if(authOverlay) authOverlay.classList.add('hidden');
+      if(appEl) appEl.classList.remove('hidden');
+      performScan(); // Only auto-scan if authorized
+    } else {
+      isAuthorizedSession = false;
+      if(authOverlay) authOverlay.classList.remove('hidden');
+      if(appEl) appEl.classList.add('hidden');
+      const midInput = document.getElementById('auth-machine-id');
+      if(midInput) midInput.value = mid;
+      const statusEl = document.getElementById('license-status');
+      if(statusEl) statusEl.textContent = '未激活';
+    }
+    
+    // Bind Activation Button
+    const btnActivate = document.getElementById('btn-activate');
+    if (btnActivate) {
+      btnActivate.onclick = async function() {
+        const code = document.getElementById('auth-code-input').value.trim();
+        const errEl = document.getElementById('auth-error');
+        if (!code) return errEl.textContent = "请输入激活码";
+        errEl.textContent = "验证中...";
+        const res = await verifyLicense(mid, code);
+        if (res && res.valid) {
+          errEl.textContent = "激活成功！";
+          errEl.style.color = "#10b981";
+          chrome.storage.local.set({act_code: code});
+          setTimeout(() => location.reload(), 1000);
+        } else {
+          errEl.textContent = "激活码无效或已过期，请检查";
+        }
+      };
+    }
+    
+    const btnCopyMid = document.getElementById('btn-copy-mid');
+    if (btnCopyMid) {
+      btnCopyMid.onclick = function() {
+        navigator.clipboard.writeText(mid);
+        const originalTitle = this.title;
+        this.title = "已复制";
+        setTimeout(() => this.title = originalTitle, 2000);
+      };
+    }
+  });
 });
 
 // --- Manual re-scan button ---
