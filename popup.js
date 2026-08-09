@@ -60,6 +60,15 @@ var badgeGallery = document.getElementById('badge-gallery');
 var badgeSku = document.getElementById('badge-sku');
 var badgeDetail = document.getElementById('badge-detail');
 
+// SKU Actions & Panel
+var btnToggleSkuView = document.getElementById('btn-toggle-sku-view');
+var btnCopySkuJson = document.getElementById('btn-copy-sku-json');
+var btnExportSkuCsv = document.getElementById('btn-export-sku-csv');
+var skuDataPanel = document.getElementById('sku-data-panel');
+var skuTabContentTable = document.getElementById('sku-tab-content-table');
+var skuTabContentJson = document.getElementById('sku-tab-content-json');
+var skuJsonCode = document.getElementById('sku-json-code');
+
 // Preview areas
 var titlePreview = document.getElementById('title-preview');
 var galleryThumbs = document.getElementById('gallery-thumbs');
@@ -208,6 +217,31 @@ if (sizeSlider) {
 }
 applyCardSize(currentCardSize);
 
+// --- Large Grid size adjustment ---
+var LARGE_GRID_BASE = 240;
+var largeGridSizeKey = 'skuLargeGridCardSize';
+
+function applyLargeGridSize(size) {
+  if (typeof size !== 'number' || isNaN(size)) size = LARGE_GRID_BASE;
+  localStorage.setItem(largeGridSizeKey, size);
+  var container = document.getElementById('sku-large-grid-content');
+  if (!container) return;
+  var ratio = size / LARGE_GRID_BASE;           // column width ratio (unlimited)
+  var textRatio = Math.min(ratio, 1.5);          // text size capped at 1.5x
+  container.style.setProperty('--large-grid-min-col', size + 'px');
+  container.style.setProperty('--large-grid-img-h', Math.round(LARGE_GRID_BASE * ratio) + 'px');
+  container.style.setProperty('--large-grid-gap', Math.round(20 * ratio) + 'px');
+  container.style.setProperty('--large-grid-pad', Math.round(20 * ratio) + 'px');
+  container.style.setProperty('--large-grid-font-title', Math.round(16 * textRatio) + 'px');
+  container.style.setProperty('--large-grid-font-specs', Math.round(13 * textRatio) + 'px');
+  container.style.setProperty('--large-grid-font-price', Math.round(18 * textRatio) + 'px');
+  container.style.setProperty('--large-grid-font-stock', Math.round(14 * textRatio) + 'px');
+  var valSpan = document.getElementById('sku-large-grid-size-value');
+  if (valSpan) valSpan.textContent = size + 'px';
+  var slider = document.getElementById('sku-large-grid-size-slider');
+  if (slider) slider.value = size;
+}
+
 // --- State ---
 var scanData = null;
 
@@ -215,11 +249,21 @@ var scanData = null;
 var selectedPool = {
   gallery: new Set(),
   sku: new Set(),
-  detail: new Set()
+  detail: new Set(),
+  skuRows: new Set()
 };
 
 function getSelectedTotalCount() {
-  return selectedPool.gallery.size + selectedPool.sku.size + selectedPool.detail.size;
+  var skuImageSet = new Set();
+  if (scanData && scanData.skuData && scanData.skuData.skuMatrix) {
+    selectedPool.skuRows.forEach(function(index) {
+      var item = scanData.skuData.skuMatrix[index];
+      if (item && item.skuImageUrl) {
+        skuImageSet.add(item.skuImageUrl);
+      }
+    });
+  }
+  return selectedPool.gallery.size + skuImageSet.size + selectedPool.detail.size;
 }
 
 function isFilterLikeMode() {
@@ -258,6 +302,12 @@ function setStatus(className, text) {
 }
 
 // --- Lightbox Navigation State ---
+function formatSpecs(text) {
+  if (!text) return '-';
+  var safeText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return safeText.replace(/&/g, '<span class="spec-amp">&amp;</span>');
+}
+
 var currentLightboxList = [];
 var currentLightboxIndex = 0;
 
@@ -279,7 +329,23 @@ function showLightboxAt(index) {
   if (modal && img) {
     img.src = item.url || '';
     if (titleEl) {
-      titleEl.textContent = item.name || item.url || '';
+      if (item._skuDetails) {
+        var d = item._skuDetails;
+        var sColor = d.stock < 10 ? '#f87171' : (d.stock < 50 ? '#fde047' : '#a5b4fc');
+        var price = d.price ? '￥' + d.price : '-';
+        var stock = d.stock !== undefined ? d.stock : '-';
+        titleEl.innerHTML = '<div style="display:flex; flex-direction:column; gap:6px; line-height:1.2;">' +
+          '<div style="font-weight:700; font-size:15px; color:#e2e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (item.name || item.url || '') + '</div>' +
+          '<div style="font-size:13px; color:#94a3b8; display:flex; gap:12px; flex-wrap:wrap;">' +
+            '<span><strong style="color:#f472b6;">规格：</strong>' + formatSpecs(d.specs) + '</span>' +
+            '<span><strong style="color:#38bdf8;">价格：</strong>' + price + '</span>' +
+            '<span><strong style="color:#f472b6;">库存：</strong><span style="color:' + sColor + '; font-weight:bold;">' + stock + '</span></span>' +
+            '<span><strong style="color:#94a3b8;">SKU ID：</strong>' + (d.skuId || '-') + '</span>' +
+          '</div></div>';
+      } else {
+        titleEl.innerHTML = '';
+        titleEl.textContent = item.name || item.url || '';
+      }
     }
     if (counterEl) {
       counterEl.textContent = (currentLightboxIndex + 1) + ' / ' + currentLightboxList.length;
@@ -324,6 +390,16 @@ function openLightbox(list, index) {
   currentLightboxList = list || [];
   currentLightboxIndex = index || 0;
 
+  // If large grid modal is visible, boost lightbox z-index above it
+  var largeGridModal = document.getElementById('sku-large-grid-modal');
+  if (largeGridModal && !largeGridModal.classList.contains('hidden')) {
+    var lightbox = document.getElementById('lightbox-modal');
+    if (lightbox) {
+      lightbox.style.zIndex = '9999';
+      lightbox.setAttribute('data-zboost', '1');
+    }
+  }
+
   var currentItem = currentLightboxList[currentLightboxIndex] || { url: '', name: '' };
 
   if (currentPreviewMode === 'box') {
@@ -366,6 +442,11 @@ function closeLightbox() {
     if (img) img.src = '';
     if (titleEl) titleEl.textContent = '';
     if (counterEl) counterEl.textContent = '';
+    // Restore z-index if boosted for large grid overlay
+    if (modal.hasAttribute('data-zboost')) {
+      modal.style.zIndex = '1000';
+      modal.removeAttribute('data-zboost');
+    }
   }
 }
 
@@ -410,6 +491,39 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     }
   });
+
+  // SKU Table batch actions
+  var btnSkuSelectSafe = document.getElementById('btn-sku-select-safe');
+  var btnSkuClear = document.getElementById('btn-sku-clear');
+  
+  if (btnSkuSelectSafe) {
+    btnSkuSelectSafe.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (scanData && scanData.skuData && scanData.skuData.skuMatrix) {
+        selectedPool.skuRows.clear();
+        scanData.skuData.skuMatrix.forEach(function(item, idx) {
+          if (item.stock >= 50) {
+            selectedPool.skuRows.add(idx);
+          }
+        });
+        updateDownloadButtonState();
+        if (typeof renderSkuDataPanel === 'function') {
+          renderSkuDataPanel(scanData.skuData);
+        }
+      }
+    });
+  }
+
+  if (btnSkuClear) {
+    btnSkuClear.addEventListener('click', function(e) {
+      e.stopPropagation();
+      selectedPool.skuRows.clear();
+      updateDownloadButtonState();
+      if (typeof renderSkuDataPanel === 'function') {
+        renderSkuDataPanel(scanData.skuData);
+      }
+    });
+  }
 });
 
 document.addEventListener('keydown', function (e) {
@@ -579,8 +693,50 @@ function renderAllThumbnails() {
   updateSliderVisibility();
   applyCardSize(currentCardSize);
   populateThumbs(galleryThumbs, scanData.gallery, 'gallery');
-  populateThumbs(skuThumbs, scanData.sku, 'sku');
   populateThumbs(detailThumbs, scanData.detail, 'detail');
+  
+  var skuBatchActions = document.getElementById('sku-table-batch-actions');
+  if (skuBatchActions) {
+    if (isFilterLikeMode()) {
+      skuBatchActions.classList.remove('hidden');
+    } else {
+      skuBatchActions.classList.add('hidden');
+    }
+  }
+
+  // Update SKU Table UI if visible
+  var table = document.querySelector('.sku-table');
+  if (table) {
+    var rowChks = table.querySelectorAll('.sku-table-check-row');
+    var availableCount = 0;
+    var checkedCount = 0;
+    rowChks.forEach(function(chk) {
+      if (!chk.disabled) {
+        availableCount++;
+        var idx = parseInt(chk.getAttribute('data-index'), 10);
+        var tr = chk.closest('tr');
+        var gridCard = document.querySelector('.sku-grid-card[data-index="' + idx + '"]');
+        var largeGridCard = document.querySelector('.sku-large-grid-card[data-index="' + idx + '"]');
+        if (selectedPool.skuRows.has(idx)) {
+          chk.checked = true;
+          if (tr) tr.classList.add('sku-row-selected');
+          if (gridCard) gridCard.classList.add('sku-row-selected');
+          if (largeGridCard) largeGridCard.classList.add('sku-row-selected');
+          checkedCount++;
+        } else {
+          chk.checked = false;
+          if (tr) tr.classList.remove('sku-row-selected');
+          if (gridCard) gridCard.classList.remove('sku-row-selected');
+          if (largeGridCard) largeGridCard.classList.remove('sku-row-selected');
+        }
+      }
+    });
+    var allChk = document.getElementById('sku-table-check-all');
+    if (allChk) {
+      allChk.checked = (availableCount > 0 && checkedCount === availableCount);
+    }
+  }
+
   updateDownloadButtonState();
 }
 
@@ -630,9 +786,777 @@ function createCopyableRow(labelText, fullText, isUrl) {
 }
 
 /**
- * Show title preview with two copyable lines: title and URL.
+ * Convert structured SKU data into CSV string format (with UTF-8 BOM)
  */
-function showTitlePreview(title, pageUrl) {
+function convertSkuDataToCsv(skuData) {
+  if (!skuData || !skuData.skuMatrix || !Array.isArray(skuData.skuMatrix)) {
+    return '';
+  }
+
+  var csv = '\uFEFF';
+  
+  var dimNames = [];
+  if (skuData.skuProps && skuData.skuProps.length > 0) {
+    skuData.skuProps.forEach(function(prop) {
+      dimNames.push((prop.prop || prop.name || prop.attributeName || '维度').replace(/"/g, '""'));
+    });
+  }
+
+  var baseHeaders = '"图片名称","图片链接","商品ID","商品标题","SKU_ID"';
+  var endHeaders = '"规格编码","单价","库存","货号"\n';
+  
+  if (dimNames.length > 0) {
+    var dimHeaders = dimNames.map(function(n) { return '"' + n + '"'; }).join(',');
+    csv += baseHeaders + ',' + dimHeaders + ',' + endHeaders;
+  } else {
+    csv += baseHeaders + ',"规格组合",' + endHeaders;
+  }
+
+  var title = (skuData.title || '').replace(/"/g, '""');
+  var offerId = (skuData.offerId || '').replace(/"/g, '""');
+
+  skuData.skuMatrix.forEach(function (item) {
+    var skuId = (item.skuId || '').replace(/"/g, '""');
+    var specAttrs = (item.specAttributes || '').replace(/"/g, '""');
+    var specId = (item.specId || '').replace(/"/g, '""');
+    var price = (item.price || '').replace(/"/g, '""');
+    var stock = item.stock !== undefined ? item.stock : 0;
+    var cargoNumber = (item.cargoNumber || '').replace(/"/g, '""');
+    var skuImageName = (item.skuImageName || '').replace(/"/g, '""');
+    var skuImageUrl = (item.skuImageUrl || '').replace(/"/g, '""');
+
+    var baseVals = '"' + skuImageName + '","' + skuImageUrl + '","' + offerId + '","' + title + '","' + skuId + '"';
+    var endVals = ',"' + specId + '","' + price + '","' + stock + '","' + cargoNumber + '"\n';
+    
+    if (dimNames.length > 0) {
+      var specs = specAttrs.split('&');
+      var dimVals = dimNames.map(function(n, idx) {
+        var v = (specs[idx] || '').replace(/"/g, '""');
+        return '"' + v + '"';
+      }).join(',');
+      csv += baseVals + ',' + dimVals + endVals;
+    } else {
+      csv += baseVals + ',"' + specAttrs + '"' + endVals;
+    }
+  });
+
+  return csv;
+}
+
+function triggerDownloadCsv(content, filename) {
+  var blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+if (btnCopySkuJson) {
+  btnCopySkuJson.addEventListener('click', function () {
+    if (scanData && scanData.skuData) {
+      var jsonStr = JSON.stringify(scanData.skuData, null, 2);
+      navigator.clipboard.writeText(jsonStr).then(function () {
+        var originalText = btnCopySkuJson.textContent;
+        btnCopySkuJson.textContent = '已复制!';
+        setTimeout(function () {
+          btnCopySkuJson.textContent = originalText;
+        }, 1500);
+      });
+    }
+  });
+}
+
+if (btnExportSkuCsv) {
+  btnExportSkuCsv.addEventListener('click', function () {
+    if (scanData && scanData.skuData) {
+      var csvContent = convertSkuDataToCsv(scanData.skuData);
+      var safeName = sanitizeFolder(scanData.title || '1688_product');
+      triggerDownloadCsv(csvContent, safeName + '_SKU矩阵数据.csv');
+    }
+  });
+}
+
+if (btnToggleSkuView) {
+  btnToggleSkuView.addEventListener('click', function () {
+    if (skuDataPanel) {
+      var isHidden = skuDataPanel.classList.contains('hidden');
+      if (isHidden) {
+        skuDataPanel.classList.remove('hidden');
+        btnToggleSkuView.textContent = '收起数据';
+      } else {
+        skuDataPanel.classList.add('hidden');
+        btnToggleSkuView.textContent = '查看数据';
+      }
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  var tabBtns = document.querySelectorAll('.sku-tab-btn');
+  tabBtns.forEach(function (tabBtn) {
+    tabBtn.addEventListener('click', function () {
+      tabBtns.forEach(function (b) { b.classList.remove('active'); });
+      tabBtn.classList.add('active');
+
+      var targetTab = tabBtn.getAttribute('data-tab');
+      var skuTabContentTable = document.getElementById('sku-tab-content-table');
+      var skuTabContentList = document.getElementById('sku-tab-content-list');
+      var skuTabContentJson = document.getElementById('sku-tab-content-json');
+      
+      if (skuTabContentTable) skuTabContentTable.classList.add('hidden');
+      if (skuTabContentList) skuTabContentList.classList.add('hidden');
+      if (skuTabContentJson) skuTabContentJson.classList.add('hidden');
+      
+      if (targetTab === 'table' && skuTabContentTable) skuTabContentTable.classList.remove('hidden');
+      if (targetTab === 'list' && skuTabContentList) skuTabContentList.classList.remove('hidden');
+      if (targetTab === 'json' && skuTabContentJson) skuTabContentJson.classList.remove('hidden');
+      if (targetTab === 'large') {
+        if (window._openSkuLargeGrid) window._openSkuLargeGrid();
+        tabBtn.classList.remove('active');
+        (document.querySelector('.sku-tab-btn[data-tab="list"]') || tabBtns[0]).classList.add('active');
+      }
+    });
+  });
+});
+
+/**
+ * Render SKU Table View and JSON Code View inside popup panel
+ */
+function renderSkuDataPanel(skuData) {
+  if (!skuData) return;
+
+  // 1. Render Table
+  if (skuTabContentTable) {
+    skuTabContentTable.replaceChildren();
+    if (skuData.skuMatrix && skuData.skuMatrix.length > 0) {
+      var table = document.createElement('table');
+      table.className = 'sku-table';
+
+      var thead = document.createElement('thead');
+      var theadTr = document.createElement('tr');
+      theadTr.innerHTML = '<th style="width:30px;"><input type="checkbox" id="sku-table-check-all" title="全选当前所有"></th><th style="width:50px;">图片</th><th>图片名称</th>';
+      
+      var dimNames = [];
+      if (skuData.skuProps && skuData.skuProps.length > 0) {
+        skuData.skuProps.forEach(function(prop) {
+          var name = prop.prop || prop.name || prop.attributeName || '维度';
+          dimNames.push(name);
+          var th = document.createElement('th');
+          th.textContent = name;
+          theadTr.appendChild(th);
+        });
+      } else {
+        var th = document.createElement('th');
+        th.textContent = '规格组合';
+        theadTr.appendChild(th);
+      }
+      
+      theadTr.innerHTML += '<th>单价</th><th>库存</th><th>货号</th><th>SKU ID</th>';
+      thead.appendChild(theadTr);
+      table.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
+      var availableRowsCount = 0;
+      
+      skuData.skuMatrix.forEach(function (item, index) {
+        var tr = document.createElement('tr');
+        var isOutOfStock = item.stock < 10;
+        
+        if (!isOutOfStock) {
+          availableRowsCount++;
+          tr.style.cursor = 'pointer';
+        }
+
+        // Checkbox TD
+        var checkTd = document.createElement('td');
+        var chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.className = 'sku-table-check-row';
+        chk.setAttribute('data-index', index);
+        if (isOutOfStock) {
+          chk.disabled = true;
+          selectedPool.skuRows.delete(index); // Ensure it's not selected
+        } else {
+          var isSel = selectedPool.skuRows.has(index);
+          chk.checked = isSel;
+          if (isSel) tr.classList.add('sku-row-selected');
+        }
+        chk.onchange = function(e) {
+          if (chk.checked) {
+            selectedPool.skuRows.add(index);
+            tr.classList.add('sku-row-selected');
+          } else {
+            selectedPool.skuRows.delete(index);
+            tr.classList.remove('sku-row-selected');
+          }
+          updateDownloadButtonState();
+          
+          var allChk = document.getElementById('sku-table-check-all');
+          if (allChk) {
+            allChk.checked = (availableRowsCount > 0 && selectedPool.skuRows.size === availableRowsCount);
+          }
+          
+          var gridCard = document.querySelector('.sku-grid-card[data-index="' + index + '"]');
+          if (gridCard) {
+            if (chk.checked) gridCard.classList.add('sku-row-selected');
+            else gridCard.classList.remove('sku-row-selected');
+          }
+        };
+        checkTd.appendChild(chk);
+        tr.appendChild(checkTd);
+
+        // Row click to toggle checkbox (ignore if clicking the checkbox itself or the image)
+        tr.addEventListener('click', function(e) {
+          if (!isOutOfStock && e.target.tagName !== 'INPUT' && e.target.tagName !== 'IMG') {
+            chk.click();
+          }
+        });
+
+        var imgTd = document.createElement('td');
+        if (item.skuImageUrl) {
+          var img = document.createElement('img');
+          img.src = item.skuImageUrl;
+          img.style.cssText = 'width:40px; height:40px; object-fit:cover; border-radius:4px; display:block; margin:auto; cursor:pointer;';
+          img.title = '点击预览大图（支持切换和勾选）';
+          img.onclick = function(e) {
+            e.stopPropagation();
+            if (typeof openLightbox === 'function') {
+              var validItems = [];
+              var actualStartIdx = 0;
+              skuData.skuMatrix.forEach(function(rItem, rIdx) {
+                if (rItem.skuImageUrl) { // Map all valid sku images
+                  if (rIdx === index) {
+                    actualStartIdx = validItems.length;
+                  }
+                  validItems.push({
+                    url: rItem.skuImageUrl,
+                    name: rItem.skuImageName || ('SKU_' + rItem.skuId),
+                    _groupName: rItem.stock < 10 ? null : 'skuRows', // if out of stock, do not allow selection
+                    _originalIndex: rIdx,
+                    _skuDetails: {
+                      price: rItem.price,
+                      stock: rItem.stock,
+                      specs: rItem.specAttributes,
+                      skuId: rItem.skuId
+                    }
+                  });
+                }
+              });
+              openLightbox(validItems, actualStartIdx);
+            } else {
+              window.open(item.skuImageUrl, '_blank');
+            }
+          };
+          imgTd.appendChild(img);
+        } else {
+          imgTd.textContent = '-';
+          imgTd.style.textAlign = 'center';
+        }
+        tr.appendChild(imgTd);
+        
+        var imgNameTd = document.createElement('td');
+        imgNameTd.textContent = item.skuImageName || '-';
+        tr.appendChild(imgNameTd);
+
+        if (dimNames.length > 0) {
+          var specs = (item.specAttributes || '').split('&');
+          dimNames.forEach(function(dim, index) {
+            var td = document.createElement('td');
+            td.textContent = specs[index] || '-';
+            tr.appendChild(td);
+          });
+        } else {
+          var specTd = document.createElement('td');
+          specTd.innerHTML = formatSpecs(item.specAttributes);
+          tr.appendChild(specTd);
+        }
+
+        var priceTd = document.createElement('td');
+        priceTd.textContent = item.price ? ('￥' + item.price) : '-';
+
+        var stockTd = document.createElement('td');
+        stockTd.textContent = item.stock !== undefined ? item.stock : '-';
+        
+        // Stock highlighting applied ONLY to the stock cell
+        if (item.stock < 10) {
+          stockTd.style.backgroundColor = 'rgba(248, 113, 113, 0.8)';
+          stockTd.style.color = '#fff';
+          stockTd.style.fontWeight = 'bold';
+        } else if (item.stock < 50) {
+          stockTd.style.backgroundColor = 'rgba(253, 224, 71, 0.8)';
+          stockTd.style.color = '#333';
+          stockTd.style.fontWeight = 'bold';
+        }
+
+        var cargoTd = document.createElement('td');
+        cargoTd.textContent = item.cargoNumber || '-';
+
+        var skuIdTd = document.createElement('td');
+        skuIdTd.textContent = item.skuId || '-';
+
+        tr.appendChild(priceTd);
+        tr.appendChild(stockTd);
+        tr.appendChild(cargoTd);
+        tr.appendChild(skuIdTd);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      skuTabContentTable.appendChild(table);
+
+      // Bind select all checkbox
+      var chkAll = document.getElementById('sku-table-check-all');
+      if (chkAll) {
+        chkAll.checked = (availableRowsCount > 0 && selectedPool.skuRows.size === availableRowsCount);
+        chkAll.addEventListener('change', function() {
+          var isChecked = this.checked;
+          var rowChks = table.querySelectorAll('.sku-table-check-row:not(:disabled)');
+          rowChks.forEach(function(chk) {
+            chk.checked = isChecked;
+            var idx = parseInt(chk.getAttribute('data-index'), 10);
+            var row = chk.closest('tr');
+            var gridCard = document.querySelector('.sku-grid-card[data-index="' + idx + '"]');
+            if (isChecked) {
+              selectedPool.skuRows.add(idx);
+              if (row) row.classList.add('sku-row-selected');
+              if (gridCard) gridCard.classList.add('sku-row-selected');
+            } else {
+              selectedPool.skuRows.delete(idx);
+              if (row) row.classList.remove('sku-row-selected');
+              if (gridCard) gridCard.classList.remove('sku-row-selected');
+            }
+          });
+          updateDownloadButtonState();
+        });
+      }
+    } else {
+      var emptyNotice = document.createElement('div');
+      emptyNotice.style.cssText = 'padding:12px; color:#94a3b8; text-align:center; font-size:11px;';
+      emptyNotice.textContent = '暂无结构化 SKU 规格组合数据';
+      skuTabContentTable.appendChild(emptyNotice);
+    }
+  }
+
+  // 2. Render SKU Grid List (大图模式)
+  var skuTabContentList = document.getElementById('sku-tab-content-list');
+  if (skuTabContentList) {
+    skuTabContentList.replaceChildren();
+    if (skuData.skuMatrix && skuData.skuMatrix.length > 0) {
+      var gridContainer = document.createElement('div');
+      gridContainer.className = 'sku-grid-container';
+      
+      skuData.skuMatrix.forEach(function (item, index) {
+        var isOutOfStock = item.stock < 10;
+        var card = document.createElement('div');
+        card.className = 'sku-grid-card';
+        card.setAttribute('data-index', index);
+        if (isOutOfStock) card.classList.add('disabled');
+        
+        var isSel = selectedPool.skuRows.has(index);
+        if (isSel && !isOutOfStock) card.classList.add('sku-row-selected');
+        
+        var imgWrap = document.createElement('div');
+        imgWrap.className = 'sku-grid-img-wrap';
+        
+        var img = document.createElement('img');
+        img.className = 'sku-grid-img';
+        img.src = item.skuImageUrl || 'https://via.placeholder.com/150/0f172a/94a3b8?text=No+Image';
+        
+        var badge = document.createElement('div');
+        badge.className = 'sku-grid-badge';
+        badge.innerHTML = '&#10003;'; // Checkmark
+        
+        imgWrap.appendChild(img);
+        imgWrap.appendChild(badge);
+        
+        var info = document.createElement('div');
+        info.className = 'sku-grid-info';
+        
+        var title = document.createElement('div');
+        title.className = 'sku-grid-title';
+        title.textContent = item.skuImageName || ('SKU_' + item.skuId);
+        title.title = title.textContent;
+        
+        var specs = document.createElement('div');
+        specs.className = 'sku-grid-specs';
+        specs.innerHTML = formatSpecs(item.specAttributes);
+        
+        var priceStock = document.createElement('div');
+        priceStock.className = 'sku-grid-price-stock';
+        
+        var price = document.createElement('div');
+        price.className = 'sku-grid-price';
+        price.textContent = item.price ? ('￥' + item.price) : '-';
+        
+        var stock = document.createElement('div');
+        stock.className = 'sku-grid-stock';
+        stock.textContent = item.stock !== undefined ? ('库存: ' + item.stock) : '-';
+        if (item.stock < 10) stock.style.color = '#ef4444';
+        else if (item.stock < 50) stock.style.color = '#eab308';
+        
+        priceStock.appendChild(price);
+        priceStock.appendChild(stock);
+        
+        info.appendChild(title);
+        info.appendChild(specs);
+        info.appendChild(priceStock);
+        // Tooltip shows full content on hover
+        info.setAttribute('data-tooltip',
+          (item.skuImageName || ('SKU_' + item.skuId)) + '\n' +
+          (item.specAttributes || '-') + '\n' +
+          (item.price ? ('￥' + item.price) : '-') + '  ' + (item.stock !== undefined ? ('库存: ' + item.stock) : '-'));
+        specs.title = item.specAttributes || '-';
+        
+        card.appendChild(imgWrap);
+        card.appendChild(info);
+        
+        card.addEventListener('click', function(e) {
+          if (isOutOfStock) return;
+          // Toggle selection
+          if (selectedPool.skuRows.has(index)) {
+             selectedPool.skuRows.delete(index);
+          } else {
+             selectedPool.skuRows.add(index);
+          }
+          updateDownloadButtonState();
+          
+          // Re-sync UI for this item in both Table and Grid
+          var tableRowChk = document.querySelector('.sku-table-check-row[data-index="' + index + '"]');
+          if (tableRowChk) {
+             tableRowChk.checked = selectedPool.skuRows.has(index);
+             var tr = tableRowChk.closest('tr');
+             if (tr) {
+               if (tableRowChk.checked) tr.classList.add('sku-row-selected');
+               else tr.classList.remove('sku-row-selected');
+             }
+          }
+          if (selectedPool.skuRows.has(index)) {
+             card.classList.add('sku-row-selected');
+          } else {
+             card.classList.remove('sku-row-selected');
+          }
+          
+          var allChk = document.getElementById('sku-table-check-all');
+          if (allChk) {
+             var avail = skuData.skuMatrix.filter(function(i) { return i.stock >= 10; }).length;
+             allChk.checked = (avail > 0 && selectedPool.skuRows.size === avail);
+          }
+        });
+        
+        // Add a preview button on the image
+        var previewBtn = document.createElement('div');
+        previewBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+        previewBtn.style.cssText = 'position:absolute; bottom:4px; right:4px; width:22px; height:22px; background:rgba(0,0,0,0.6); color:#fff; border-radius:4px; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; transition:background 0.2s;';
+        previewBtn.title = "全屏预览";
+        previewBtn.onmouseenter = function() { previewBtn.style.background = 'rgba(99,102,241,0.8)'; };
+        previewBtn.onmouseleave = function() { previewBtn.style.background = 'rgba(0,0,0,0.6)'; };
+        
+        var openPreview = function(e) {
+          e.stopPropagation();
+          if (typeof openLightbox === 'function') {
+            var validItems = [];
+            var actualStartIdx = 0;
+            skuData.skuMatrix.forEach(function(rItem, rIdx) {
+              if (rItem.skuImageUrl) {
+                if (rIdx === index) {
+                  actualStartIdx = validItems.length;
+                }
+                validItems.push({
+                  url: rItem.skuImageUrl,
+                  name: rItem.skuImageName || ('SKU_' + rItem.skuId),
+                  _groupName: rItem.stock < 10 ? null : 'skuRows',
+                  _originalIndex: rIdx,
+                  _skuDetails: {
+                    price: rItem.price,
+                    stock: rItem.stock,
+                    specs: rItem.specAttributes,
+                    skuId: rItem.skuId
+                  }
+                });
+              }
+            });
+            openLightbox(validItems, actualStartIdx);
+          }
+        };
+        previewBtn.onclick = openPreview;
+        imgWrap.appendChild(previewBtn);
+        
+        gridContainer.appendChild(card);
+      });
+      skuTabContentList.appendChild(gridContainer);
+    }
+  }
+
+  // 3. Render JSON Code
+  if (skuJsonCode) {
+    skuJsonCode.textContent = JSON.stringify(skuData, null, 2);
+  }
+  
+  // 4. Setup Large Grid Modal
+  var largeModal = document.getElementById('sku-large-grid-modal');
+  var largeCloseBtn = document.getElementById('btn-sku-large-close');
+  var largeContent = document.getElementById('sku-large-grid-content');
+  var largeGridSizeKey = 'picDownload_largeGridSize';
+  var largeSizeSlider = document.getElementById('sku-large-grid-size-slider');
+  var largeSizeValue = document.getElementById('sku-large-grid-size-value');
+  
+  function applyLargeGridSize(val) {
+    if (largeContent) {
+      largeContent.style.setProperty('--large-grid-min-col', val + 'px');
+      largeContent.style.setProperty('--large-grid-img-h', val + 'px');
+    }
+    if (largeSizeSlider && largeSizeSlider.value != val) largeSizeSlider.value = val;
+    if (largeSizeValue) largeSizeValue.textContent = val + 'px';
+    localStorage.setItem(largeGridSizeKey, val);
+  }
+
+  if (largeModal && largeContent) {
+    if (skuData.skuMatrix && skuData.skuMatrix.length > 0) {
+      // Store populator function for tab click to invoke
+      window._openSkuLargeGrid = function() {
+        largeContent.replaceChildren();
+        skuData.skuMatrix.forEach(function(item, index) {
+        var isOutOfStock = item.stock < 10;
+        var card = document.createElement('div');
+        card.className = 'sku-large-grid-card';
+        card.setAttribute('data-index', index);
+        if (isOutOfStock) card.classList.add('disabled');
+        
+        var isSel = selectedPool.skuRows.has(index);
+        if (isSel && !isOutOfStock) card.classList.add('sku-row-selected');
+        
+        var imgWrap = document.createElement('div');
+        imgWrap.className = 'sku-grid-img-wrap';
+        var img = document.createElement('img');
+        img.className = 'sku-grid-img';
+        img.src = item.skuImageUrl || 'https://via.placeholder.com/150/0f172a/94a3b8?text=No+Image';
+        
+        var badge = document.createElement('div');
+        badge.className = 'sku-grid-badge';
+        badge.innerHTML = '&#10003;';
+        imgWrap.appendChild(img);
+        imgWrap.appendChild(badge);
+        
+        var info = document.createElement('div');
+        info.className = 'sku-grid-info';
+        
+        var title = document.createElement('div');
+        title.className = 'sku-large-grid-title';
+        title.textContent = item.skuImageName || ('SKU_' + item.skuId);
+        title.title = title.textContent;
+        
+        var specs = document.createElement('div');
+        specs.className = 'sku-large-grid-specs';
+        specs.innerHTML = formatSpecs(item.specAttributes);
+        
+        var priceStock = document.createElement('div');
+        priceStock.className = 'sku-grid-price-stock';
+        
+        var price = document.createElement('div');
+        price.className = 'sku-large-grid-price';
+        price.textContent = item.price ? ('￥' + item.price) : '-';
+        
+        var stock = document.createElement('div');
+        stock.className = 'sku-large-grid-stock';
+        stock.textContent = item.stock !== undefined ? ('库存: ' + item.stock) : '-';
+        if (item.stock < 10) stock.style.color = '#ef4444';
+        else if (item.stock < 50) stock.style.color = '#eab308';
+        
+        priceStock.appendChild(price);
+        priceStock.appendChild(stock);
+        info.appendChild(title);
+        info.appendChild(specs);
+        info.appendChild(priceStock);
+        
+        var cargoSkuId = document.createElement('div');
+        cargoSkuId.className = 'sku-large-grid-ext';
+        cargoSkuId.style.fontSize = '11px';
+        cargoSkuId.style.color = '#64748b';
+        cargoSkuId.style.marginTop = '4px';
+        cargoSkuId.style.display = 'flex';
+        cargoSkuId.style.justifyContent = 'space-between';
+        var cargoText = item.cargoNumber ? ('货号: ' + item.cargoNumber) : '';
+        var skuIdText = item.skuId ? ('ID: ' + item.skuId) : '';
+        cargoSkuId.textContent = [cargoText, skuIdText].filter(Boolean).join(' | ');
+        info.appendChild(cargoSkuId);
+        
+        card.appendChild(imgWrap);
+        card.appendChild(info);
+
+        // Preview button on image
+        var previewBtn = document.createElement('div');
+        previewBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+        previewBtn.style.cssText = 'position:absolute; bottom:4px; right:4px; width:24px; height:24px; background:rgba(0,0,0,0.6); color:#fff; border-radius:4px; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; transition:background 0.2s;';
+        previewBtn.title = "全屏预览";
+        previewBtn.onmouseenter = function() { previewBtn.style.background = 'rgba(236,72,153,0.8)'; };
+        previewBtn.onmouseleave = function() { previewBtn.style.background = 'rgba(0,0,0,0.6)'; };
+
+        var openPreview = function(e) {
+          e.stopPropagation();
+          if (typeof openLightbox === 'function') {
+            var validItems = [];
+            var actualStartIdx = 0;
+            skuData.skuMatrix.forEach(function(rItem, rIdx) {
+              if (rItem.skuImageUrl) {
+                if (rIdx === index) actualStartIdx = validItems.length;
+                validItems.push({
+                  url: rItem.skuImageUrl,
+                  name: rItem.skuImageName || ('SKU_' + rItem.skuId),
+                  _groupName: rItem.stock < 10 ? null : 'skuRows',
+                  _originalIndex: rIdx,
+                  _skuDetails: {
+                    price: rItem.price,
+                    stock: rItem.stock,
+                    specs: rItem.specAttributes,
+                    skuId: rItem.skuId
+                  }
+                });
+              }
+            });
+            openLightbox(validItems, actualStartIdx);
+          }
+        };
+        previewBtn.onclick = openPreview;
+        imgWrap.appendChild(previewBtn);
+
+        // Modal card click sync
+        card.addEventListener('click', function(e) {
+          if (isOutOfStock) return;
+          if (selectedPool.skuRows.has(index)) selectedPool.skuRows.delete(index);
+          else selectedPool.skuRows.add(index);
+          updateDownloadButtonState();
+          
+          // Sync large card
+          if (selectedPool.skuRows.has(index)) card.classList.add('sku-row-selected');
+          else card.classList.remove('sku-row-selected');
+          
+          // Sync grid card
+          var gridCard = document.querySelector('.sku-grid-card[data-index="' + index + '"]');
+          if (gridCard) {
+            if (selectedPool.skuRows.has(index)) gridCard.classList.add('sku-row-selected');
+            else gridCard.classList.remove('sku-row-selected');
+          }
+          
+          // Sync table row
+          var tableRowChk = document.querySelector('.sku-table-check-row[data-index="' + index + '"]');
+          if (tableRowChk) {
+             tableRowChk.checked = selectedPool.skuRows.has(index);
+             var tr = tableRowChk.closest('tr');
+             if (tr) {
+               if (tableRowChk.checked) tr.classList.add('sku-row-selected');
+               else tr.classList.remove('sku-row-selected');
+             }
+          }
+          
+          // Sync main check all
+          var allChk = document.getElementById('sku-table-check-all');
+          var avail = skuData.skuMatrix.filter(function(i) { return i.stock >= 10; }).length;
+          if (allChk) allChk.checked = (avail > 0 && selectedPool.skuRows.size === avail);
+        });
+        
+
+        
+        largeContent.appendChild(card);
+      });
+      largeModal.classList.remove('hidden');
+      // Restore saved size
+      var savedSize = parseInt(localStorage.getItem(largeGridSizeKey), 10);
+      if (savedSize && savedSize >= 150 && savedSize <= 450) {
+        applyLargeGridSize(savedSize);
+      }
+    };
+    } else {
+      window._openSkuLargeGrid = null;
+    }
+
+    // Large grid size slider and Alt+Wheel zoom
+    if (largeSizeSlider) {
+      largeSizeSlider.oninput = function() {
+        applyLargeGridSize(parseInt(largeSizeSlider.value, 10));
+      };
+    }
+    
+    var largePanel = document.getElementById('sku-large-grid-panel');
+    if (largePanel) {
+      largePanel.addEventListener('wheel', function(e) {
+        if (e.altKey && !largeModal.classList.contains('hidden')) {
+          e.preventDefault();
+          var currentSize = parseInt(localStorage.getItem(largeGridSizeKey), 10) || parseInt(largeSizeSlider ? largeSizeSlider.value : 240, 10);
+          var minSize = 150;
+          var maxSize = 1200;
+          var step = 10;
+          if (e.deltaY < 0) { // Scroll up -> zoom in
+            currentSize = Math.min(maxSize, currentSize + step);
+          } else { // Scroll down -> zoom out
+            currentSize = Math.max(minSize, currentSize - step);
+          }
+          applyLargeGridSize(currentSize);
+        }
+      }, { passive: false });
+    }
+    
+    var closeLargeAndSwitch = function() {
+      largeModal.classList.add('hidden');
+      // Switch active tab to gallery mode (list)
+      var allTabs = document.querySelectorAll('.sku-tab-btn');
+      allTabs.forEach(function(b) { b.classList.remove('active'); });
+      var galleryTab = document.querySelector('.sku-tab-btn[data-tab="list"]') || allTabs[0];
+      if (galleryTab) galleryTab.classList.add('active');
+      // Show gallery content, hide others
+      var skuTabContentTable = document.getElementById('sku-tab-content-table');
+      var skuTabContentList = document.getElementById('sku-tab-content-list');
+      var skuTabContentJson = document.getElementById('sku-tab-content-json');
+      if (skuTabContentTable) skuTabContentTable.classList.add('hidden');
+      if (skuTabContentJson) skuTabContentJson.classList.add('hidden');
+      if (skuTabContentList) skuTabContentList.classList.remove('hidden');
+    };
+
+    if (largeCloseBtn) {
+      largeCloseBtn.onclick = closeLargeAndSwitch;
+    }
+
+    // Overlay click to close
+    var largeOverlay = document.getElementById('sku-large-grid-overlay');
+    if (largeOverlay) {
+      largeOverlay.onclick = closeLargeAndSwitch;
+    }
+    
+    // Bind modal Select All / Clear All
+    var btnLargeSelectSafe = document.getElementById('btn-sku-large-select-safe');
+    var btnLargeClear = document.getElementById('btn-sku-large-clear');
+    
+    if (btnLargeSelectSafe) {
+      btnLargeSelectSafe.onclick = function() {
+        var btnSelectSafe = document.getElementById('btn-sku-select-safe');
+        if (btnSelectSafe) btnSelectSafe.click(); // Reuse existing logic which syncs everything
+        
+        // Update large cards
+        var largeCards = document.querySelectorAll('.sku-large-grid-card:not(.disabled)');
+        largeCards.forEach(function(c) {
+          var idx = parseInt(c.getAttribute('data-index'), 10);
+          if (selectedPool.skuRows.has(idx)) c.classList.add('sku-row-selected');
+        });
+      };
+    }
+    if (btnLargeClear) {
+      btnLargeClear.onclick = function() {
+        var btnClear = document.getElementById('btn-sku-clear');
+        if (btnClear) btnClear.click(); // Reuse existing logic
+        
+        var largeCards = document.querySelectorAll('.sku-large-grid-card');
+        largeCards.forEach(function(c) { c.classList.remove('sku-row-selected'); });
+      };
+    }
+  }
+}
+
+/**
+ * Show title preview with copyable lines: title, URL, and SKU JSON metadata.
+ */
+function showTitlePreview(title, pageUrl, skuData) {
   titlePreview.replaceChildren();
 
   if (title) {
@@ -641,6 +1565,24 @@ function showTitlePreview(title, pageUrl) {
 
   if (pageUrl) {
     titlePreview.appendChild(createCopyableRow('\u7f51\u5740\uff1a', pageUrl, true));
+  }
+
+  if (skuData && (skuData.summary || skuData.skuMatrix)) {
+    var skuMeta = '已解构 ' + ((skuData.summary && skuData.summary.totalSkus) || (skuData.skuMatrix ? skuData.skuMatrix.length : 0)) + ' 个SKU规格组合 (' +
+                  ((skuData.summary && skuData.summary.propDimensions) || (skuData.skuProps ? skuData.skuProps.length : 0)) + ' 维度 / ' +
+                  ((skuData.summary && skuData.summary.priceTierCount) || (skuData.priceModel && skuData.priceModel.priceRanges ? skuData.priceModel.priceRanges.length : 0)) + ' 阶梯价)';
+    titlePreview.appendChild(createCopyableRow('SKU数据：', skuMeta, false));
+
+    if (btnToggleSkuView) btnToggleSkuView.classList.remove('hidden');
+    if (btnCopySkuJson) btnCopySkuJson.classList.remove('hidden');
+    if (btnExportSkuCsv) btnExportSkuCsv.classList.remove('hidden');
+
+    renderSkuDataPanel(skuData);
+  } else {
+    if (btnToggleSkuView) btnToggleSkuView.classList.add('hidden');
+    if (btnCopySkuJson) btnCopySkuJson.classList.add('hidden');
+    if (btnExportSkuCsv) btnExportSkuCsv.classList.add('hidden');
+    if (skuDataPanel) skuDataPanel.classList.add('hidden');
   }
 }
 
@@ -718,7 +1660,7 @@ async function performScan() {
 
     var results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ['content.js']
+      files: ['1688_sku_collector.js', 'content.js']
     });
 
     if (results && results[0] && results[0].result) {
@@ -730,14 +1672,19 @@ async function performScan() {
       selectedPool.gallery.clear();
       selectedPool.sku.clear();
       selectedPool.detail.clear();
+      selectedPool.skuRows.clear();
 
       // Popup mode: default all unchecked; Filter mode: default all checked
       if (currentWorkMode !== 'popup') {
         if (scanData.gallery) {
           for (var g = 0; g < scanData.gallery.length; g++) selectedPool.gallery.add(g);
         }
-        if (scanData.sku) {
-          for (var k = 0; k < scanData.sku.length; k++) selectedPool.sku.add(k);
+        if (scanData.skuData && scanData.skuData.skuMatrix) {
+          for (var r = 0; r < scanData.skuData.skuMatrix.length; r++) {
+            if (scanData.skuData.skuMatrix[r].stock >= 10) {
+              selectedPool.skuRows.add(r);
+            }
+          }
         }
         if (scanData.detail) {
           for (var d = 0; d < scanData.detail.length; d++) selectedPool.detail.add(d);
@@ -750,8 +1697,8 @@ async function performScan() {
       badgeSku.textContent = String(s.skuCount);
       badgeDetail.textContent = String(s.detailCount);
 
-      // Show title preview
-      showTitlePreview(scanData.title, scanData.pageUrl);
+      // Show title & SKU data preview
+      showTitlePreview(scanData.title, scanData.pageUrl, scanData.skuData);
 
       // Render All Thumbnails based on mode
       renderAllThumbnails();
@@ -863,7 +1810,8 @@ btnDownload.addEventListener('click', function () {
     pageUrl: scanData.pageUrl,
     gallery: scanData.gallery,
     sku: scanData.sku,
-    detail: scanData.detail
+    detail: scanData.detail,
+    skuData: scanData.skuData
   };
 
   // Filter / Popup mode -> only send selected items
@@ -871,9 +1819,23 @@ btnDownload.addEventListener('click', function () {
     downloadPayload.gallery = scanData.gallery.filter(function (_, idx) {
       return selectedPool.gallery.has(idx);
     });
-    downloadPayload.sku = scanData.sku.filter(function (_, idx) {
-      return selectedPool.sku.has(idx);
+    
+    var skuImages = [];
+    var skuImageUrls = new Set();
+    selectedPool.skuRows.forEach(function(idx) {
+      if (scanData.skuData && scanData.skuData.skuMatrix) {
+        var item = scanData.skuData.skuMatrix[idx];
+        if (item && item.skuImageUrl && !skuImageUrls.has(item.skuImageUrl)) {
+          skuImageUrls.add(item.skuImageUrl);
+          skuImages.push({
+            url: item.skuImageUrl,
+            name: item.skuImageName || ('sku_' + item.skuId)
+          });
+        }
+      }
     });
+    downloadPayload.sku = skuImages;
+
     downloadPayload.detail = scanData.detail.filter(function (_, idx) {
       return selectedPool.detail.has(idx);
     });
@@ -972,6 +1934,22 @@ var lightboxScale = 1;
 document.addEventListener('wheel', function(e) {
   if (e.altKey) {
     e.preventDefault(); // Prevent default page scrolling
+
+    // Check large grid modal first
+    var largeGridModal = document.getElementById('sku-large-grid-modal');
+    if (largeGridModal && !largeGridModal.classList.contains('hidden')) {
+      var largeSlider = document.getElementById('sku-large-grid-size-slider');
+      if (!largeSlider) return;
+      var step = parseInt(largeSlider.step, 10) || 10;
+      var cur = parseInt(largeSlider.value, 10);
+      var min = parseInt(largeSlider.min, 10) || 150;
+      var max = parseInt(largeSlider.max, 10) || 450;
+      if (e.deltaY < 0) cur = Math.min(max, cur + step * 2);
+      else if (e.deltaY > 0) cur = Math.max(min, cur - step * 2);
+      largeSlider.value = cur;
+      applyLargeGridSize(cur);
+      return;
+    }
 
     var modal = document.getElementById('lightbox-modal');
     if (modal && !modal.classList.contains('hidden')) {

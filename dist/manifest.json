@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "1688 Detail Image Downloader",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "1688 商品数据一键采集：标题+URL、图册、SKU色卡、详情图",
   "permissions": [
     "activeTab",

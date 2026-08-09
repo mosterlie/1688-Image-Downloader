@@ -21,4 +21,8 @@ desktop.ini
 *.log
 
 # 项目专属
-# 忽略临时测试下载的文件夹（通常带有 1.【商品标题】 类似特征，但一般不在项目目录下载）
+scratch/
+test_sku_collector.py
+1688_sku_collector_plan.md
+样例/
+

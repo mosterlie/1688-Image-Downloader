@@ -140,6 +140,33 @@ function downloadTxtFile(content, folder, filename) {
 }
 
 /**
+ * Create and download a JSON file using a data URL.
+ */
+function downloadJsonFile(content, folder, filename) {
+  return new Promise(function (resolve, reject) {
+    var jsonStr = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+    var dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonStr);
+    var savePath = folder + '/' + filename + '.json';
+
+    chrome.downloads.download(
+      {
+        url: dataUrl,
+        filename: savePath,
+        saveAs: false,
+        conflictAction: 'uniquify'
+      },
+      function (downloadId) {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError.message);
+        } else {
+          resolve(downloadId);
+        }
+      }
+    );
+  });
+}
+
+/**
  * Delay helper.
  */
 function delay(ms) {
@@ -260,23 +287,31 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
       var completed = 0;
       var failed = 0;
 
-      // --- Step 1: Create txt file first (locks mainFolderDownloadId) ---
+      // --- Step 1: Create txt file and optional SKU JSON file ---
+      var rawBaseName = (data.title || 'product_info')
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+        .replace(/\s+/g, '_')
+        .trim() || 'product_info';
+
       try {
         var txtContent = '\u6807\u9898\uff1a' + (data.title || '') + '\r\n\u7f51\u5740\uff1a' + (data.pageUrl || '');
-        var txtFilename = (data.title || 'product_info');
-        txtFilename = txtFilename
-          .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
-          .replace(/\s+/g, '_')
-          .trim();
-        if (!txtFilename) {
-          txtFilename = 'product_info';
-        }
-        txtFilename = '1.' + txtFilename;
+        var txtFilename = '1.' + rawBaseName;
 
         await downloadTxtFile(txtContent, folder, txtFilename);
         completed++;
       } catch (err) {
         failed++;
+      }
+
+      if (data.skuData) {
+        try {
+          var skuFolder = folder + '/2.sku';
+          var jsonFilename = '1.' + rawBaseName + '_SKU\u6570\u636e';
+          await downloadJsonFile(data.skuData, skuFolder, jsonFilename);
+          completed++;
+        } catch (err) {
+          failed++;
+        }
       }
 
       // --- Step 2: Collect all image tasks ---
@@ -300,7 +335,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         }
       }
 
-      var total = 1 + tasks.length; // +1 for txt file
+      var total = (data.skuData ? 2 : 1) + tasks.length; // +1 for txt file, +1 for JSON if exists
 
       sendProgress({
         action: 'downloadProgress',

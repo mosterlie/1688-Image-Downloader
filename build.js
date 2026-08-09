@@ -5,8 +5,8 @@ const path = require('path');
 const srcDir = __dirname;
 const distDir = path.join(__dirname, 'dist');
 
-const filesToObfuscate = ['popup.js', 'background.js', 'content.js'];
-const filesToCopy = ['popup.html', 'popup.css', 'manifest.json', 'README.md', 'VERSION.md'];
+const filesToObfuscate = ['popup.js', 'background.js', 'content.js', '1688_sku_collector.js'];
+const filesToCopy = ['popup.html', 'popup.css', 'manifest.json', 'VERSION.md'];
 
 async function build() {
   console.log('Cleaning dist directory...');

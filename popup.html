@@ -108,15 +108,33 @@
           <div class="result-group-header">
             <div class="header-left">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-              <span class="result-group-name">SKU 色卡</span>
+              <span class="result-group-name">SKU 详情</span>
               <span class="result-group-badge" id="badge-sku">0</span>
             </div>
-            <div class="group-batch-actions hidden">
-              <button type="button" class="btn-group-select-all" data-target="sku" title="全选SKU">全选</button>
-              <button type="button" class="btn-group-clear-all" data-target="sku" title="清空选择">清空</button>
+            <div class="sku-data-actions" style="display: flex; gap: 4px;">
+              <button type="button" id="btn-copy-sku-json" class="btn-group-select-all hidden" title="复制全量 SKU 结构化 JSON">复制 JSON</button>
+              <button type="button" id="btn-export-sku-csv" class="btn-group-select-all hidden" title="导出全量 SKU 表格 CSV">导出 CSV</button>
+            </div>
+            <div class="group-batch-actions hidden" id="sku-table-batch-actions">
+              <button type="button" id="btn-sku-select-safe" class="btn-group-select-all" title="全选库存大于等于50的SKU">全选(&ge;50)</button>
+              <button type="button" id="btn-sku-clear" class="btn-group-clear-all" title="清空所有选择">清空</button>
             </div>
           </div>
-          <div class="result-group-thumbs" id="sku-thumbs"></div>
+          <!-- SKU Data Preview Box (JSON / Table) -->
+          <div id="sku-data-panel">
+            <div class="sku-panel-tabs">
+              <button type="button" class="sku-tab-btn active" data-tab="list">画廊模式</button>
+              <button type="button" class="sku-tab-btn" data-tab="large" title="全屏大图模式选款">大图模式</button>
+              <button type="button" class="sku-tab-btn" data-tab="table">明细表格</button>
+              <button type="button" class="sku-tab-btn" data-tab="json">JSON 源码</button>
+            </div>
+            <div id="sku-tab-content-table" class="sku-tab-content hidden"></div>
+            <div id="sku-tab-content-list" class="sku-tab-content"></div>
+            <div id="sku-tab-content-json" class="sku-tab-content hidden">
+              <pre id="sku-json-code"></pre>
+            </div>
+          </div>
+          <div class="result-group-thumbs hidden" id="sku-thumbs"></div>
         </div>
 
         <!-- Detail -->
@@ -196,6 +214,29 @@
     <div id="footer">
       <span id="license-status" style="margin-right: auto; font-size: 11px; color: #10b981;"></span>
       <span>v2.1.0</span>
+    </div>
+
+    <!-- SKU Large Grid Modal -->
+    <div id="sku-large-grid-modal" class="hidden">
+      <div id="sku-large-grid-overlay"></div>
+      <div id="sku-large-grid-panel">
+        <div id="sku-large-grid-header">
+          <div style="font-size: 16px; font-weight: 800; color: #fbcfe8;">大图模式</div>
+          <div class="large-grid-size-slider">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+            <span>卡片大小</span>
+            <span class="large-grid-size-hint">(Alt+滚轮)</span>
+            <input type="range" id="sku-large-grid-size-slider" min="150" max="1200" step="10" value="240" title="可按住 Alt 键 + 鼠标滚轮快速调节">
+            <span id="sku-large-grid-size-value">240px</span>
+          </div>
+          <div style="display: flex; gap: 8px; margin-left: auto;">
+            <button type="button" id="btn-sku-large-select-safe" class="btn-group-select-all" title="全选库存大于等于50的SKU">全选(&ge;50)</button>
+            <button type="button" id="btn-sku-large-clear" class="btn-group-clear-all" title="清空所有选择">清空</button>
+            <button type="button" id="btn-sku-large-close" class="btn-group-clear-all" style="background:#ef4444; color:#fff; border-color:#dc2626;" title="关闭">关闭</button>
+          </div>
+        </div>
+        <div id="sku-large-grid-content"></div>
+      </div>
     </div>
 
     <!-- Lightbox Modal for Box Preview -->

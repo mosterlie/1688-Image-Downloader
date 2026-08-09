@@ -398,16 +398,159 @@
   var sku = extractSku();
   var detail = extractDetail();
 
+  // 尝试解构 1688 全量 SKU 结构化 JSON 数据 (同步获取页面内数据与 DOM 维度)
+  var skuData = null;
+  var rawInitData = (typeof window !== 'undefined' ? window.__INIT_DATA : null);
+  if (!rawInitData && typeof SkuCollector1688 !== 'undefined' && typeof SkuCollector1688.extractInitDataFromDom === 'function') {
+    rawInitData = SkuCollector1688.extractInitDataFromDom();
+  }
+
+  if (rawInitData && typeof SkuCollector1688 !== 'undefined' && typeof SkuCollector1688.parseInitData === 'function') {
+    skuData = SkuCollector1688.parseInitData(rawInitData);
+  }
+
+  function cleanPropTitle(text) {
+    if (!text) return '';
+    text = text.replace(/按[套件].*/g, '');
+    text = text.replace(/[:：\s]/g, '').trim();
+    return text;
+  }
+
+  function cleanValName(valEl, btnEl) {
+    var name = '';
+    if (valEl) {
+      name = valEl.getAttribute('title') || valEl.textContent || '';
+    }
+    if (!name && btnEl) {
+      name = btnEl.getAttribute('title') || btnEl.textContent || '';
+    }
+    name = name.replace(/¥[\d.]+/g, '').replace(/库存\d+件?/g, '').replace(/[\r\n\t]+/g, ' ');
+    return name.trim();
+  }
+
+  /**
+   * 从 DOM 中按 feature-item 维度分析并提取多维度 SKU 属性 (Multi-Dimensional SKU Props)
+   */
+  function extractMultiDimSkuPropsFromDom() {
+    var skuProps = [];
+    var featureItems = document.querySelectorAll('.feature-item, [class*="feature-item"]');
+
+    for (var f = 0; f < featureItems.length; f++) {
+      var feature = featureItems[f];
+
+      var labelEl = feature.querySelector('h3, .feature-item-label h3, .label-name, .prop-name, .sku-title');
+      if (!labelEl) {
+        labelEl = feature.querySelector('.feature-item-label, .item-label, label, p');
+      }
+
+      var rawPText = labelEl ? labelEl.textContent.trim() : ('维度 ' + (skuProps.length + 1));
+      var propName = cleanPropTitle(rawPText) || ('维度 ' + (skuProps.length + 1));
+
+      var buttons = feature.querySelectorAll('.sku-filter-button, .expand-view-item, [class*="sku-item"], button');
+      var values = [];
+      var seenVals = new Set();
+
+      for (var b = 0; b < buttons.length; b++) {
+        var btn = buttons[b];
+        var imgEl = btn.querySelector('img.ant-image-img') || btn.querySelector('img') || (btn.tagName === 'IMG' ? btn : null);
+        var rawUrl = imgEl ? (imgEl.getAttribute('data-src') || imgEl.getAttribute('lazy-src') || imgEl.src || imgEl.getAttribute('src') || '') : '';
+        var cleanImg = cleanOriginalUrl(rawUrl);
+
+        var valLabelEl = btn.querySelector('.item-label, .label-name, .gyp-pro-table-title p, span') || btn;
+        var valName = cleanValName(valLabelEl, btn);
+
+        // 提取单价和库存 (来自 .item-price-stock 元素)
+        var valPrice = '';
+        var valStock = 0;
+        var priceStockEls = btn.querySelectorAll('.item-price-stock');
+        for (var ps = 0; ps < priceStockEls.length; ps++) {
+          var psText = priceStockEls[ps].textContent || '';
+          var priceMatch = psText.match(/[¥￥]\s*([\d.]+)/);
+          if (priceMatch) valPrice = priceMatch[1];
+          var stockMatch = psText.match(/(\d+)\s*[件个套]/);
+          if (!stockMatch) stockMatch = psText.match(/库存\s*(\d+)/);
+          if (stockMatch) valStock = parseInt(stockMatch[1], 10) || 0;
+        }
+
+        if (valName && !seenVals.has(valName) && valName.length < 80) {
+          seenVals.add(valName);
+          values.push({
+            name: valName,
+            imageUrl: cleanImg,
+            specId: '',
+            price: valPrice,
+            stock: valStock
+          });
+        }
+      }
+
+      if (values.length > 0) {
+        skuProps.push({
+          prop: propName,
+          values: values
+        });
+      }
+    }
+
+    // 若未匹配到 feature-item，且已有单一 sku 抓取结果，兜底转成单维度
+    if (skuProps.length === 0 && sku && sku.length > 0) {
+      var singleVals = sku.map(function (item) {
+        var cleanName = (item.name || '').replace(/^sku_\d+_/, '');
+        return {
+          name: cleanName,
+          imageUrl: item.url,
+          specId: ''
+        };
+      });
+      skuProps.push({
+        prop: '规格/属性',
+        values: singleVals
+      });
+    }
+
+    return skuProps;
+  }
+
+  // 兜底/升级：若未解析到 __INIT_DATA 但 DOM 提取到了 SKU 选项，按 DOM 多维度计算笛卡尔积全量组合！
+  if (!skuData || !skuData.skuMatrix || skuData.skuMatrix.length === 0) {
+    var domSkuProps = extractMultiDimSkuPropsFromDom();
+    if (domSkuProps.length > 0) {
+      var cartesianMatrix = (typeof SkuCollector1688 !== 'undefined' && typeof SkuCollector1688.generateCartesianMatrix === 'function')
+        ? SkuCollector1688.generateCartesianMatrix(domSkuProps)
+        : [];
+
+      skuData = {
+        title: title || '',
+        offerId: '',
+        priceModel: { price: '', unit: '元', priceRanges: [] },
+        skuProps: domSkuProps,
+        skuMatrix: cartesianMatrix,
+        summary: {
+          propDimensions: domSkuProps.length,
+          totalSkus: cartesianMatrix.length,
+          priceTierCount: 0
+        }
+      };
+    }
+  }
+
+  // 兜底补全标题（若主图解析未拿到标题而 skuData 中存在标题）
+  if (!title && skuData && skuData.title) {
+    title = skuData.title;
+  }
+
   return {
     title: title,
     pageUrl: pageUrl,
     gallery: gallery,
     sku: sku,
     detail: detail,
+    skuData: skuData,
     summary: {
       galleryCount: gallery.length,
       skuCount: sku.length,
       detailCount: detail.length,
+      skuDataCount: skuData && skuData.skuMatrix ? skuData.skuMatrix.length : 0,
       totalImages: gallery.length + sku.length + detail.length
     }
   };
